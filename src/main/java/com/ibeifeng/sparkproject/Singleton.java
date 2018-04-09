@@ -48,7 +48,7 @@ public class Singleton {
             //在这里，进行多个线程的同步
             //同一时间，只能有一个线程获取到Singleton Class对象的锁
             //进入后续的代码
-            //其他线程，都是只能够在原地等待，获取锁
+            //其他线程，都是只能够在原地等 待，获取锁
             synchronized (Singleton.class) {
                 //只有第一个获取到锁的线程，进入到这里，会发现是instance是null
                 //然后才会去创建这个单例
