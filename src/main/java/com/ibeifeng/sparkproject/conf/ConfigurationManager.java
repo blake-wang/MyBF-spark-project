@@ -62,16 +62,16 @@ public class ConfigurationManager {
 
     /**
      * 获取key对应的value
-     *
+     * <p>
      * 第一次外界代码，调用ConfigurationManager类的getProperty静态方法时，JVM内部会发现ConfigurationManager类还不在JVM的内存中
      * 此时JVM，就会使用自己的ClassLoader（类加载器），去对应的类所在的磁盘文件（.class文件）中去加载ConfigurationManager类，
      * 到JVM内存中来，并根据类内部的信息，去创建一个Class对象。
-     *
+     * <p>
      * Class对象中，就包含了类的元信息，包括类有哪些field（Properties prop），有哪些方法（getProperty）;
-     *
+     * <p>
      * 加载ConfigurationManager类的时候，还会初始化这个类，那么此时就执行类的static静态代码块，
      * 此时咱们自己编写的静态代码块中的代码，就会加载my.properties文件的内容，到Properties对象中来。
-     *
+     * <p>
      * 下一次外界代码，再调用ConfigurationManager的getProperty()方法时，就不会再次加载类，不会再次初始化类，和执行静态代码块了，
      * 所以也印证了，我们上面所说的，类只会加载一次，配置文件也仅仅会加载一次。
      *
@@ -80,5 +80,16 @@ public class ConfigurationManager {
      */
     public static String getProperty(String key) {
         return prop.getProperty(key);
+    }
+
+    //获取整数类型的对象
+    public static Integer getInteger(String key) {
+        String property = getProperty(key);
+        try {
+            return Integer.valueOf(property);
+        } catch (NumberFormatException e) {
+            e.printStackTrace();
+        }
+        return 0;
     }
 }
