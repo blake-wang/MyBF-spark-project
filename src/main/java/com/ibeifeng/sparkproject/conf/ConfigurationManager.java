@@ -14,6 +14,13 @@ import java.util.Properties;
  * 3、我们这里的话，就是开发一个简单的配置管理组件，就可以了
  */
 public class ConfigurationManager {
+
+    /**
+     * Properties对象使用private修饰，就代表了其是类私有的
+     * 那么外界的代码，就不能直接通过ConfigurationManager.prop这种方式获取到Properties对象
+     * 之所以这么做，是为了避免外界的代码不小心错误的更新了Properties中某个key对应的value
+     * 从而导致整个程序的状态错误，乃至崩溃
+     */
     private static Properties prop = new Properties();
 
     /**
@@ -51,5 +58,14 @@ public class ConfigurationManager {
             e.printStackTrace();
         }
 
+    }
+
+    /**
+     * 获取key对应的value
+     * @param key
+     * @return
+     */
+    public static String getProperty(String key) {
+        return prop.getProperty(key);
     }
 }
