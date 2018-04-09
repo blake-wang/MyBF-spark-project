@@ -1,0 +1,14 @@
+import com.ibeifeng.sparkproject.dao.ITaskDAO;
+import com.ibeifeng.sparkproject.dao.impl.DAOFactory;
+import com.ibeifeng.sparkproject.domain.Task;
+
+/**
+ * Created by wanglei on 2018/4/9.
+ */
+public class TestDAO {
+    public static void main(String[] args) {
+        ITaskDAO taskDAO = DAOFactory.getTaskDAO();
+        Task byId = taskDAO.findById(1);
+        System.out.println(byId.getTask_name());
+    }
+}
