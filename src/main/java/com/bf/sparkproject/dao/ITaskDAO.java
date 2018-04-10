@@ -1,6 +1,6 @@
-package com.ibeifeng.sparkproject.dao;
+package com.bf.sparkproject.dao;
 
-import com.ibeifeng.sparkproject.domain.Task;
+import com.bf.sparkproject.domain.Task;
 
 /**
  * Created by wanglei on 2018/4/9.

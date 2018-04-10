@@ -1,6 +1,6 @@
-import com.ibeifeng.sparkproject.dao.ITaskDAO;
-import com.ibeifeng.sparkproject.dao.impl.DAOFactory;
-import com.ibeifeng.sparkproject.domain.Task;
+import com.bf.sparkproject.dao.ITaskDAO;
+import com.bf.sparkproject.dao.impl.DAOFactory;
+import com.bf.sparkproject.domain.Task;
 
 /**
  * Created by wanglei on 2018/4/9.

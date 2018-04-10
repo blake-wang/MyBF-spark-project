@@ -1,4 +1,4 @@
-package com.ibeifeng.sparkproject;
+package com.bf.sparkproject;
 
 /**
  * Created by wanglei on 2018/4/9.

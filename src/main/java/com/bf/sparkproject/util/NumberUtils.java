@@ -1,4 +1,4 @@
-package com.ibeifeng.sparkproject.util;
+package com.bf.sparkproject.util;
 
 import java.math.BigDecimal;
 

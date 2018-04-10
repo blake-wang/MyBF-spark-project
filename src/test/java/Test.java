@@ -1,5 +1,3 @@
-import com.ibeifeng.sparkproject.MockData;
-
 /**
  * Created by wanglei on 2018/4/9.
  */

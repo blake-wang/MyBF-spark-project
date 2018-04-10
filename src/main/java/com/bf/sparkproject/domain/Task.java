@@ -1,4 +1,4 @@
-package com.ibeifeng.sparkproject.domain;
+package com.bf.sparkproject.domain;
 
 import java.io.Serializable;
 

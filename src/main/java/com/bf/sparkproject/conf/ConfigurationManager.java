@@ -1,4 +1,4 @@
-package com.ibeifeng.sparkproject.conf;
+package com.bf.sparkproject.conf;
 
 import java.io.InputStream;
 import java.util.Properties;
@@ -102,5 +102,16 @@ public class ConfigurationManager {
             e.printStackTrace();
         }
         return false;
+    }
+
+    //获取Long类型的对象
+    public static Long getLong(String key) {
+        try {
+            String property = getProperty(key);
+            return Long.valueOf(property);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return 0L;
     }
 }

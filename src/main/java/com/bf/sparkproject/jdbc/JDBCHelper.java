@@ -1,7 +1,7 @@
-package com.ibeifeng.sparkproject.jdbc;
+package com.bf.sparkproject.jdbc;
 
-import com.ibeifeng.sparkproject.conf.ConfigurationManager;
-import com.ibeifeng.sparkproject.constant.Constants;
+import com.bf.sparkproject.conf.ConfigurationManager;
+import com.bf.sparkproject.constant.Constants;
 
 import java.sql.*;
 import java.util.LinkedList;

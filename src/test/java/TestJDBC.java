@@ -1,4 +1,4 @@
-import com.ibeifeng.sparkproject.jdbc.JDBCHelper;
+import com.bf.sparkproject.jdbc.JDBCHelper;
 
 import java.sql.Connection;
 import java.sql.ResultSet;

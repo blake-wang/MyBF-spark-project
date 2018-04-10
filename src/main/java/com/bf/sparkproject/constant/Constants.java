@@ -1,4 +1,4 @@
-package com.ibeifeng.sparkproject.constant;
+package com.bf.sparkproject.constant;
 
 /**
  * Created by wanglei on 2018/4/9.

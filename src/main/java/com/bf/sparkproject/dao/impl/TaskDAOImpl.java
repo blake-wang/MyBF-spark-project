@@ -1,8 +1,8 @@
-package com.ibeifeng.sparkproject.dao.impl;
+package com.bf.sparkproject.dao.impl;
 
-import com.ibeifeng.sparkproject.dao.ITaskDAO;
-import com.ibeifeng.sparkproject.domain.Task;
-import com.ibeifeng.sparkproject.jdbc.JDBCHelper;
+import com.bf.sparkproject.dao.ITaskDAO;
+import com.bf.sparkproject.domain.Task;
+import com.bf.sparkproject.jdbc.JDBCHelper;
 
 import java.sql.ResultSet;
 

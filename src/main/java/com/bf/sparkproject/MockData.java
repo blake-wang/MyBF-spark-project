@@ -1,7 +1,7 @@
-package com.ibeifeng.sparkproject;
+package com.bf.sparkproject;
 
-import com.ibeifeng.sparkproject.util.DateUtils;
-import com.ibeifeng.sparkproject.util.StringUtils;
+import com.bf.sparkproject.util.DateUtils;
+import com.bf.sparkproject.util.StringUtils;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.sql.DataFrame;

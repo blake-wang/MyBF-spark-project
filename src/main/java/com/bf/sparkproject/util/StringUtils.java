@@ -1,4 +1,4 @@
-package com.ibeifeng.sparkproject.util;
+package com.bf.sparkproject.util;
 
 /**
  * 字符串工具类
