@@ -33,7 +33,7 @@ public class ParamUtils {
             }
         }
 
-        return null;
+        return 0L;
     }
 
     /**
