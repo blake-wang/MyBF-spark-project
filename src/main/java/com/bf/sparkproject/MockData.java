@@ -101,6 +101,7 @@ public class MockData {
 
         df.registerTempTable("user_visit_action");
         for(Row _row : df.take(1)) {
+            System.out.println("user_visit_action");
             System.out.println(_row);
         }
 
@@ -136,7 +137,9 @@ public class MockData {
                 DataTypes.createStructField("sex", DataTypes.StringType, true)));
 
         DataFrame df2 = sqlContext.createDataFrame(rowsRDD, schema2);
+
         for(Row _row : df2.take(1)) {
+            System.out.println("user_info");
             System.out.println(_row);
         }
 
@@ -167,6 +170,7 @@ public class MockData {
 
         DataFrame df3 = sqlContext.createDataFrame(rowsRDD, schema3);
         for(Row _row : df3.take(1)) {
+            System.out.println("product_info");
             System.out.println(_row);
         }
 

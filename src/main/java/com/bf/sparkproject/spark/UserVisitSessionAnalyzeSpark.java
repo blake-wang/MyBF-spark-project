@@ -10,12 +10,15 @@ import com.bf.sparkproject.domain.Task;
 import com.bf.sparkproject.util.ParamUtils;
 import org.apache.spark.SparkConf;
 import org.apache.spark.SparkContext;
+import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
+import org.apache.spark.api.java.function.PairFunction;
 import org.apache.spark.sql.DataFrame;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SQLContext;
 import org.apache.spark.sql.hive.HiveContext;
+import scala.Tuple2;
 
 /**
  * Created by wanglei on 2018/4/9.
@@ -75,8 +78,6 @@ public class UserVisitSessionAnalyzeSpark {
         //然后就可以获取到session粒度的数据，同时呢，数据里面还包含了session对应的user的信息
 
 
-
-
         //关闭上下文
         sc.close();
     }
@@ -128,9 +129,33 @@ public class UserVisitSessionAnalyzeSpark {
         String sql = "select * from user_visit_action where date >='" + startDate + "' and date <= '" + endDate + "' ";
 
         DataFrame df = sqlContext.sql(sql);
-        df.show();
         return df.javaRDD();
 
+    }
+
+    /**
+     * 对行为数据按session粒度进行聚合
+     *
+     * @return
+     */
+    private static JavaPairRDD<String, String> aggregateBySession(JavaSparkContext sc, SQLContext sqlContext, JavaPairRDD<String, Row> sessionid2actionRDD) {
+        //现在actionRDD中的元素是Row，一个Row就是一行用户访问行为记录，比如一次点击或者搜索
+        //我们现在需要将这个Row映射成<sessionid,Row>的格式
+
+        //对行为数据按session粒度进行分组
+        JavaPairRDD<String, Iterable<Row>> sessionid2ActionsRDD = sessionid2actionRDD.groupByKey();
+
+        //对每一个session分组进行聚合，将session中所有的搜索词和点击品类都聚合起来
+        //到此为止，获取的数据格式，如下：<userid,partAggrInfo(sessionid,searchKeywords,clickCategoryIds)>
+        JavaPairRDD<Long,String> userid2PairAggrInfoRDD = sessionid2ActionsRDD.mapToPair(new PairFunction<Tuple2<String, Iterable<Row>>, Long, String>() {
+            @Override
+            public Tuple2<Long, String> call(Tuple2<String, Iterable<Row>> stringIterableTuple2) throws Exception {
+                return null;
+            }
+        });
+
+
+        return null;
     }
 
 }

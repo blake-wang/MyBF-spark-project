@@ -14,12 +14,15 @@ public interface Constants {
     String JDBC_URL = "jdbc.url";
     String JDBC_USER = "jdbc.user";
     String JDBC_PASSWORD = "jdbc.password";
-    String SPARK_LOCAL="spark.local";
+    String SPARK_LOCAL = "spark.local";
 
     /**
      * Spark作业相关的常量
      */
     String SPARK_APP_NAME_SESSION = "UserVisitSessionAnalyzeSpark";
+    String FIELD_SESSION_ID = "sessionid";
+    String FIELD_SEARCH_KEYWORDS = "searchKeywords";
+    String FIELD_CLICK_CATEGORY_IDS = "clickCategoryIds";
 
     /**
      * 任务相关的常量
