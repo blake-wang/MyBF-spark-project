@@ -1,5 +1,6 @@
 package com.bf.sparkproject.spark;
 
+import akka.routing.Broadcast;
 import com.alibaba.fastjson.JSONObject;
 import com.bf.sparkproject.MockData;
 import com.bf.sparkproject.conf.ConfigurationManager;
@@ -8,6 +9,8 @@ import com.bf.sparkproject.dao.ITaskDAO;
 import com.bf.sparkproject.dao.impl.DAOFactory;
 import com.bf.sparkproject.domain.Task;
 import com.bf.sparkproject.util.*;
+import jodd.util.collection.IntArrayList;
+import org.apache.parquet.it.unimi.dsi.fastutil.ints.IntList;
 import org.apache.spark.Accumulator;
 import org.apache.spark.SparkConf;
 import org.apache.spark.SparkContext;
@@ -15,6 +18,7 @@ import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.function.Function;
+import org.apache.spark.api.java.function.PairFlatMapFunction;
 import org.apache.spark.api.java.function.PairFunction;
 import org.apache.spark.sql.DataFrame;
 import org.apache.spark.sql.Row;
@@ -23,9 +27,7 @@ import org.apache.spark.sql.hive.HiveContext;
 import org.apache.spark.storage.StorageLevel;
 import scala.Tuple2;
 
-import java.awt.image.RasterOp;
-import java.util.Date;
-import java.util.Iterator;
+import java.util.*;
 
 /**
  * Created by wanglei on 2018/4/9.
@@ -109,7 +111,7 @@ public class UserVisitSessionAnalyzeSpark {
         JavaRDD<Row> actionRDD = getActionRDDByDateRange(sqlContext, taskParam);
 
         //这里从最原始的actionRDD进行了一次转换，生成了以sessionid为key，action为value的键值对RDD
-        JavaPairRDD<String, Row> session2ActionRDD = getSession2ActionRDD(actionRDD);
+        JavaPairRDD<String, Row> sessionid2actionRDD = getSession2ActionRDD(actionRDD);
 
         /**
          * 持久化，很简单，就是对RDD调用persist()方法，并传入一个持久化级别
@@ -124,15 +126,15 @@ public class UserVisitSessionAnalyzeSpark {
          * 选择后缀带_2的策略
          * StorageLevel.MEMORY_ONLY_2()
          */
-        session2ActionRDD = session2ActionRDD.persist(StorageLevel.MEMORY_ONLY());
-        session2ActionRDD.checkpoint();
+        sessionid2actionRDD = sessionid2actionRDD.persist(StorageLevel.MEMORY_ONLY());
+        sessionid2actionRDD.checkpoint();
 
         //首先，可以将行为数据，按照session_id进行groupByKey分组
         //此时的数据的粒度就是session粒度了，然后呢，可以将session粒度的数据
         //与用户信息数据，进行join
         //然后就可以获取到session粒度的数据，同时呢，数据里面还包含了session对应的user的信息
         //到这里为止，获取的数据是<sessionid,(sessionid,searchKeywords,clickCategoryIds,age,professional,city,sex)>
-        JavaPairRDD<String, String> sessionid2AggrInfoRDD = aggregateBySession(sc, sqlContext, session2ActionRDD);
+        JavaPairRDD<String, String> sessionid2AggrInfoRDD = aggregateBySession(sc, sqlContext, sessionid2actionRDD);
 
         //接着，就要针对session粒度的聚合数据，按照使用者指定的筛选参数进行数据过滤
         //相当于我们自己编写的算子，是要访问外面的任务参数对象的
@@ -141,11 +143,252 @@ public class UserVisitSessionAnalyzeSpark {
         //重构，同时进行过滤和统计
         Accumulator<String> sessionAggrStatAccumulator = sc.accumulator("", new SessionAggrStatAccumulator());
 
-        filterSessionAndAggrStat(sessionid2AggrInfoRDD, taskParam, sessionAggrStatAccumulator);
+        JavaPairRDD<String, String> filteredSessionid2AggrInfoRDD = filterSessionAndAggrStat(sessionid2AggrInfoRDD, taskParam, sessionAggrStatAccumulator);
+        filteredSessionid2AggrInfoRDD = filteredSessionid2AggrInfoRDD.persist(StorageLevel.MEMORY_ONLY());
+
+        //生成公共的RDD：通过筛选条件的session的访问明细数据
+
+        /**
+         *重构：sessionid2detailRDD 就是代表了通过筛选的session对应的访问明细数据
+         */
+        JavaPairRDD<String, Row> sessionid2detailRDD = getSessionid2detailRDD(filteredSessionid2AggrInfoRDD, sessionid2actionRDD);
+        sessionid2detailRDD = sessionid2detailRDD.persist(StorageLevel.MEMORY_ONLY());
+
+        /**
+         * 对于Accumulator这种分布式累加计算的变量的使用，有一个重要说明
+         *
+         * 从Accumulator中，获取数据，插入数据库的时候，一定要，一定要，是在某一个action操作以后再进行
+         *
+         * 如果没有action的话，那么整个程序根本不会运行
+         *
+         * 是不是在calculateAndPersisitAggrStat方法之后，运行一个action操作，比如count，take
+         * 不对！
+         *
+         * 必须把能够触发job执行的操作，放在最终写入MySQL方法之前
+         *
+         * 计算出来的结果，在J2EE中，是怎么显示的，是用两张柱状图显示
+         */
+
+        randomExtraSession(sc, task.getTask_id(), filteredSessionid2AggrInfoRDD, sessionid2detailRDD);
 
 
         //关闭上下文
         sc.close();
+    }
+
+    /**
+     * 随机抽取session
+     *
+     * @param sc
+     * @param task_id
+     * @param sessionid2AggrInfoRDD
+     * @param sessionid2actionRDD
+     */
+    private static void randomExtraSession(
+            JavaSparkContext sc,
+            long task_id,
+            JavaPairRDD<String, String> sessionid2AggrInfoRDD,
+            JavaPairRDD<String, Row> sessionid2actionRDD) {
+        /**
+         * 第一步、计算出每天每小时的session数量
+         */
+        //获取<yyyy-MM-dd_HH,aggrInfo>格式的RDD
+        JavaPairRDD<String, String> time2sessionidRDD = sessionid2AggrInfoRDD.mapToPair(new PairFunction<Tuple2<String, String>, String, String>() {
+            private static final long serialVersionUID = 1L;
+
+            @Override
+            public Tuple2<String, String> call(Tuple2<String, String> tuple) throws Exception {
+                String aggrInfo = tuple._2;
+                String startTime = StringUtils.getFieldFromConcatString(aggrInfo, "\\|", Constants.FIELD_START_TIME);
+                String dateHour = DateUtils.getDateHour(startTime);
+                return new Tuple2<String, String>(dateHour, aggrInfo);
+            }
+        });
+
+        /**
+         * 思考一下：这里我们不要着急写大量的代码，做项目的时候，一定要用脑子多思考
+         *
+         * 每天每小时的session数量，然后计算出每天每小时的session抽取索引，遍历每天每小时session
+         * 首先抽取出的session的聚合数据，写入session_random_extract表
+         * 所以第一个RDD的value，应该是session聚合数据
+         */
+
+        //得到每天每小时的session数量
+
+        /**
+         * 每天每小时的session数量的计算
+         * 是有可能出现数据倾斜的吧，这个是没有疑问的
+         * 比如说大部分小时，一般访问量也就10万，但是，中午12点的时候，高峰期，一个小时1000万
+         * 这个时候，就会发生数据倾斜
+         *
+         * 我们就用这个countByKey操作，给大家演示第三种和第四种方案
+         *
+         */
+        Map<String, Object> countMap = time2sessionidRDD.countByKey();
+
+        /**
+         * 第二步，使用按时间比例随机抽取算法，计算出每天每小时要抽取session的索引
+         */
+
+        //将<yyyy-MM-dd_HH,count>格式的map，转换成<yyyy-MM-dd,<HH,count>>的格式
+        Map<String, Map<String, Long>> dateHourCountMap = new HashMap<String, Map<String, Long>>();
+        for (Map.Entry<String, Object> countEntry : countMap.entrySet()) {
+            String dateHour = countEntry.getKey();
+            String date = dateHour.split("_")[0];
+            String hour = dateHour.split("_")[1];
+
+            long count = Long.valueOf(String.valueOf(countEntry.getValue()));
+
+            Map<String, Long> hourCountMap = dateHourCountMap.get(date);
+            if (hourCountMap == null) {
+                hourCountMap = new HashMap<String, Long>();
+                dateHourCountMap.put(date, hourCountMap);
+            }
+            hourCountMap.put(hour, count);
+        }
+
+        //开始实现我们的按时间比例随机抽取算法
+        //总共要抽取100个session，先按照天数，进行平分
+        int extractNumberPerDay = 100 / dateHourCountMap.size();
+
+        /**
+         * session随机抽取功能
+         *
+         * 用到了一个比较大的变量，随机抽取索引map
+         * 之前是直接在算子里面使用了这个map，那么根据我们刚才讲的这个原理，每个task都会拷贝一份map副本
+         * 还是比较小号内存和网络传输性能的
+         *
+         * 将map做成广播变量
+         */
+
+        Map<String, Map<String, List<Integer>>> dateHourExtractMap = new HashMap<String, Map<String, List<Integer>>>();
+        Random random = new Random();
+
+        for (Map.Entry<String, Map<String, Long>> dateHourCountEntry : dateHourCountMap.entrySet()) {
+            String date = dateHourCountEntry.getKey();
+            Map<String, Long> hourCountMap = dateHourCountEntry.getValue();
+
+            //计算出这一天的session总数
+            long sessionCount = 0L;
+            for (long hourCount : hourCountMap.values()) {
+                sessionCount += hourCount;
+            }
+
+            Map<String, List<Integer>> hourExtractMap = dateHourExtractMap.get(date);
+            if (hourExtractMap == null) {
+                hourExtractMap = new HashMap<String, List<Integer>>();
+                dateHourExtractMap.put(date, hourExtractMap);
+            }
+
+            //遍历每个小时
+            for (Map.Entry<String, Long> hourCountEntry : hourCountMap.entrySet()) {
+                String hour = hourCountEntry.getKey();
+                long count = hourCountEntry.getValue();
+
+                //计算每个小时的session数量，占据当天总session数量的比例，直接乘以每天要抽取的数量
+                //就可以计算出，当前小时需要抽取的session数量
+                int hourExtractNumber = (int) (((double) count / (double) sessionCount) * extractNumberPerDay);
+                if (hourExtractNumber > count) {
+                    hourExtractNumber = (int) count;
+                }
+
+                //先获取当前小时的存放随机数的list
+                List<Integer> extractIndexList = hourExtractMap.get(hour);
+                if (extractIndexList == null) {
+                    extractIndexList = new ArrayList<Integer>();
+                    hourExtractMap.put(hour, extractIndexList);
+                }
+
+                //生成上面计算出来的数量的随机数
+                for (int i = 0; i < hourExtractNumber; i++) {
+                    int extractIndex = random.nextInt((int) count);
+                    while (extractIndexList.contains(extractIndex)) {
+                        extractIndex = random.nextInt((int) count);
+                    }
+                    extractIndexList.add(extractIndex);
+                }
+            }
+        }
+        /**
+         * fastutil的使用，很简单，比如List<Integer>的List，对应到fastutil，就是IntList
+         */
+
+        Map<String, Map<String, IntArrayList>> fastutilDateHourExtractMap = new HashMap<String, Map<String, IntArrayList>>();
+
+        for (Map.Entry<String, Map<String, List<Integer>>> dateHourExtractEntry : dateHourExtractMap.entrySet()) {
+            String date = dateHourExtractEntry.getKey();
+            Map<String, List<Integer>> hourExtractMap = dateHourExtractEntry.getValue();
+            Map<String, IntArrayList> fastutilHourExtractMap = new HashMap<String, IntArrayList>();
+
+            for (Map.Entry<String, List<Integer>> hourExtractEntry : hourExtractMap.entrySet()) {
+                String hour = hourExtractEntry.getKey();
+                List<Integer> extractList = hourExtractEntry.getValue();
+
+                IntArrayList fastutilExtractList = new IntArrayList();
+
+                for (int i = 0; i < extractList.size(); i++) {
+                    fastutilExtractList.add(extractList.get(i));
+                }
+                fastutilHourExtractMap.put(hour, fastutilExtractList);
+            }
+            fastutilDateHourExtractMap.put(date, fastutilHourExtractMap);
+        }
+
+        /**
+         * 广播变量，很简单
+         * 其实就是SparkContext的broadcast()方法，传入你要广播的变量，即可
+         */
+        final org.apache.spark.broadcast.Broadcast<Map<String, Map<String, IntArrayList>>> dateHourExtractMapBroadcast =
+                sc.broadcast(fastutilDateHourExtractMap);
+
+        /**
+         * 第三步：遍历每天每小时的session，然后根据随机索引进行抽取
+         */
+        //执行groupByKey算子，得到<dateHour,(session aggrInfo)>
+        JavaPairRDD<String, Iterable<String>> time2sessionsRDD = time2sessionidRDD.groupByKey();
+
+        //我们用flatMap算子，遍历所有的<dateHour,(session aggrInfo)>格式的数据
+        //然后呢，会遍历每天每小时的session
+        //如果发现某个session恰巧在我们指定的这天这小时的随机抽取索引上
+        //那么抽取该session，直接写入MySQL的random_extract_session表
+        //将抽取出来的session id返回回来，去join他们的访问行为明细数据，写入session表
+        JavaPairRDD<String, String> extractSessionRDD = time2sessionsRDD.flatMapToPair(
+                new PairFlatMapFunction<Tuple2<String, Iterable<String>>, String, String>() {
+                    private static final long serialVersionUID = 1L;
+
+                    @Override
+                    public Iterable<Tuple2<String, String>> call(Tuple2<String, Iterable<String>> tuple) throws Exception {
+                        List<Tuple2<String, String>> extractSessionids = new ArrayList<Tuple2<String, String>>();
+                        String dateHour = tuple._1;
+                        String date = dateHour.split("_")[0];
+                        String hour = dateHour.split("_")[1];
+
+                        return null;
+                    }
+                }
+        );
+
+    }
+
+    /**
+     * 获取通过筛选条件的session的访问明细数据RDD
+     *
+     * @param sessionid2aggrInfoRDD
+     * @param sessionid2actionRDD
+     */
+    private static JavaPairRDD<String, Row> getSessionid2detailRDD(
+            JavaPairRDD<String, String> sessionid2aggrInfoRDD,
+            JavaPairRDD<String, Row> sessionid2actionRDD) {
+        JavaPairRDD<String, Row> sessionid2detailRDD = sessionid2aggrInfoRDD.join(sessionid2actionRDD).mapToPair(
+                new PairFunction<Tuple2<String, Tuple2<String, Row>>, String, Row>() {
+                    private static final long serialVersionUID = 1L;
+
+                    @Override
+                    public Tuple2<String, Row> call(Tuple2<String, Tuple2<String, Row>> tuple) throws Exception {
+                        return new Tuple2<String, Row>(tuple._1, tuple._2._2);
+                    }
+                });
+        return sessionid2detailRDD;
     }
 
     /**
